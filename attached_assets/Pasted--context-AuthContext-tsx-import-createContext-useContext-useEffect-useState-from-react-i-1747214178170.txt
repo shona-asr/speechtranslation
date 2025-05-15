@@ -1,0 +1,91 @@
+// context/AuthContext.tsx
+import { createContext, useContext, useEffect, useState } from "react";
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  updateProfile as firebaseUpdateProfile,
+  User as FirebaseUser,
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
+// Extend Firebase User type with role property
+export interface User extends FirebaseUser {
+  role?: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
+  updateProfile: (profile: { displayName?: string; photoURL?: string }) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        // Here we could fetch the user's role from the backend
+        // For now, we'll set a demo admin role for a specific user
+        const email = firebaseUser.email?.toLowerCase();
+        // Cast as User to include role property
+        const userWithRole = firebaseUser as User;
+        if (email === 'admin@example.com') {
+          userWithRole.role = 'admin';
+        }
+        setUser(userWithRole);
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    if (userCredential.user) {
+      // Demo logic for admin role
+      const email = userCredential.user.email?.toLowerCase();
+      if (email === 'admin@example.com') {
+        window.location.href = '/admin/dashboard';
+      } else {
+        window.location.href = '/dashboard';
+      }
+    }
+  };
+
+  const logout = async () => {
+    await signOut(auth);
+  };
+
+  const signup = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password);
+  };
+
+  const updateProfile = async (profile: { displayName?: string; photoURL?: string }) => {
+    if (!auth.currentUser) throw new Error("No user is signed in.");
+    await firebaseUpdateProfile(auth.currentUser, profile);
+    setUser({ ...auth.currentUser }); // update context with new info
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout, signup, updateProfile }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  return context;
+};
